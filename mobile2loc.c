@@ -12,7 +12,7 @@
   | obtain it through the world-wide-web, please send a note to          |
   | license@php.net so we can mail you a copy immediately.               |
   +----------------------------------------------------------------------+
-  | Author: guopan1<guopan1@staff.sina.com.cn>                                                             |
+  | Author: yiguopan<yiguopan@126.com>                                                             |
   +----------------------------------------------------------------------+
 */
 
