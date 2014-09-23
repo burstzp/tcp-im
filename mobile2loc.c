@@ -55,7 +55,7 @@ char machine_little_endian;
 static char *item   = NULL;
 static int filesize = 0;
 
-#define index_get_all_len(offset, index) do {			\
+#define index_get_all_len(offset, index) do {           \
     memcpy(&(offset), (index), (INDEX_LEN_READ_NUM));   \
     if (!machine_little_endian) {                       \
         offset = lb_reverse(offset);                    \
@@ -94,8 +94,8 @@ static int filesize = 0;
  * Every user visible function must have an entry in mobile2loc_functions[].
  */
 const zend_function_entry mobile2loc_functions[] = {
-	PHP_FE(mobile2loc, NULL)
-    PHP_FE_END	/* Must be the last line in mobile2loc_functions[] */
+    PHP_FE(mobile2loc, NULL)
+    PHP_FE_END  /* Must be the last line in mobile2loc_functions[] */
 };
 /* }}} */
 
@@ -103,19 +103,19 @@ const zend_function_entry mobile2loc_functions[] = {
  */
 zend_module_entry mobile2loc_module_entry = {
 #if ZEND_MODULE_API_NO >= 20010901
-	STANDARD_MODULE_HEADER,
+    STANDARD_MODULE_HEADER,
 #endif
-	"mobile2loc",
-	mobile2loc_functions,
-	PHP_MINIT(mobile2loc),
-	PHP_MSHUTDOWN(mobile2loc),
-	PHP_RINIT(mobile2loc),		/* Replace with NULL if there's nothing to do at request start */
-	PHP_RSHUTDOWN(mobile2loc),	/* Replace with NULL if there's nothing to do at request end */
-	PHP_MINFO(mobile2loc),
+    "mobile2loc",
+    mobile2loc_functions,
+    PHP_MINIT(mobile2loc),
+    PHP_MSHUTDOWN(mobile2loc),
+    PHP_RINIT(mobile2loc),      /* Replace with NULL if there's nothing to do at request start */
+    PHP_RSHUTDOWN(mobile2loc),  /* Replace with NULL if there's nothing to do at request end */
+    PHP_MINFO(mobile2loc),
 #if ZEND_MODULE_API_NO >= 20010901
-	PHP_MOBILE2LOC_VERSION,
+    PHP_MOBILE2LOC_VERSION,
 #endif
-	STANDARD_MODULE_PROPERTIES
+    STANDARD_MODULE_PROPERTIES
 };
 /* }}} */
 
@@ -171,9 +171,9 @@ static int mobile2loc_init_mem(TSRMLS_CC) {
         return 0;
     }
     fstat(fp, &sb);
-	if (sb.st_size == 0) {
-		return 0;
-	}
+    if (sb.st_size == 0) {
+        return 0;
+    }
     filesize = sb.st_size;
     item = (char *)mmap(NULL, filesize, PROT_READ, MAP_SHARED, fp, 0);
     close(fp);
@@ -251,7 +251,7 @@ PHP_FUNCTION(mobile2loc) {
  */
 PHP_MINIT_FUNCTION(mobile2loc)
 {
-	REGISTER_INI_ENTRIES();
+    REGISTER_INI_ENTRIES();
     int machine_endian_check = 1;
     machine_little_endian = ((char *)&machine_endian_check)[0];
     return SUCCESS;
@@ -262,8 +262,8 @@ PHP_MINIT_FUNCTION(mobile2loc)
  */
 PHP_MSHUTDOWN_FUNCTION(mobile2loc)
 {
-	UNREGISTER_INI_ENTRIES();
-	if (item && filesize) {
+    UNREGISTER_INI_ENTRIES();
+    if (item && filesize) {
         munmap((void *)item, filesize);
     }
     return SUCCESS;
@@ -275,7 +275,7 @@ PHP_MSHUTDOWN_FUNCTION(mobile2loc)
  */
 PHP_RINIT_FUNCTION(mobile2loc)
 {
-	return SUCCESS;
+    return SUCCESS;
 }
 /* }}} */
 
@@ -292,11 +292,11 @@ PHP_RSHUTDOWN_FUNCTION(mobile2loc)
  */
 PHP_MINFO_FUNCTION(mobile2loc)
 {
-	php_info_print_table_start();
-	php_info_print_table_header(2, "mobile2loc support", "enabled");
-	php_info_print_table_end();
+    php_info_print_table_start();
+    php_info_print_table_header(2, "mobile2loc support", "enabled");
+    php_info_print_table_end();
 
-	DISPLAY_INI_ENTRIES();
+    DISPLAY_INI_ENTRIES();
 }
 /* }}} */
 /*
