@@ -142,19 +142,11 @@ static int lb_reverse(int a){
 }
 /*}}}*/
 /*{{{*/
+/*{{{*/
 static char *substr(const char *str, int position, int length) {
-    char *pointer;
-    pointer = emalloc(length+1);
-
-    int i;
-    for (i=0; i < position; i++) {
-        str++;
-    }
-    for (i=0; i < length; i++) {
-        *(pointer+i) = *str;
-        str++;
-    }
-    *(pointer+i) = '\0';
+    char *pointer = (char *)emalloc(length + 1);
+    strncpy(pointer, str + position, length);
+    *(pointer + length) = '\0';
     return pointer;
 }
 /*}}}*/
