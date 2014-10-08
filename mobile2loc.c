@@ -22,10 +22,6 @@
 #include "config.h"
 #endif
 
-#ifdef __c
-extern "C" {
-#endif
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -37,9 +33,6 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef __c
-}
-#endif
 
 #include "php.h"
 #include "php_ini.h"
