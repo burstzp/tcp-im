@@ -13,6 +13,8 @@
 #include "filter.h"
 #include "httputil.h"
 
+#include "server.h"
+
 #define PORT        1234
 #define MAX_ON_LINE     3
 #define MEM_SIZE    1024
@@ -207,8 +209,9 @@ int main(int argc, char* argv[])
 //    printf("data = %s,1\n", p);
 //    exit(0);
     
-    
-    struct sockaddr_in my_addr;
+    server_init("", 1234, 10, 5);
+    running();
+    /*struct sockaddr_in my_addr;
     int sock;
     
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -231,6 +234,6 @@ int main(int argc, char* argv[])
     event_base_set(base, &listen_ev);
     event_add(&listen_ev, NULL);
     event_base_dispatch(base);
-    
+    */
     return 0;
 }
