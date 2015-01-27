@@ -7,3 +7,15 @@
 //
 
 #include "response.h"
+
+void response_free(response_t *response)
+{
+    if (response->body) {
+        free(response->body);
+    }
+
+    /*if (response) {
+        free(response);
+    }*/
+}
+
