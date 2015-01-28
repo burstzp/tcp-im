@@ -16,5 +16,10 @@ typedef struct response
 {
     char *body;
     size_t blen;
+    size_t size;
+//    buffer *buffer;
 }response_t;
+
+void response_free(response_t *response);
+
 #endif /* defined(__pushim__response__) */

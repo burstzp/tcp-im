@@ -11,10 +11,13 @@
 
 #include <stdio.h>
 
+
 typedef struct request
 {
     char *body;
     size_t blen;
+    size_t size;
 } request_t;
 
+void request_free(request_t *request);
 #endif /* defined(__pushim__request__) */

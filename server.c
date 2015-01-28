@@ -1,10 +1,7 @@
-//
-//  server.c
-//  pushim
-//
-//  Created by 易国磐 on 15-1-26.
-//  Copyright (c) 2015年 易国磐. All rights reserved.
-//
+#include <stdio.h>
+#include <stdlib.h>
+#include <event.h>
+#include <string.h>
 #include <stdarg.h> 	/* for va_list */
 #include <stdio.h>   	/* for fprintf */
 #include <errno.h>
@@ -23,7 +20,7 @@
 #include <grp.h>        /* for getgrnam */
 #include <arpa/inet.h> 	/* for inet_ntop */
 #include <netinet/in.h>
-
+#include <fcntl.h>  
 #include <assert.h>
 
 #include "strings.h"
@@ -31,203 +28,199 @@
 #include "file.h"
 #include "filter.h"
 #include "httputil.h"
-#include "server.h"
+
 #include "request.h"
 #include "response.h"
+#include "server.h"
 
-#include <fcntl.h> 		/* for fcntl */
-static server_t *server;
-struct event_base *base;
 
-void server_init(char *hostname, int port, int maxonline, int timeout)
-{
-    server = calloc(1, sizeof(server_t)+sizeof(hostname));
-    assert(server);
-//    server->hostname = (char *)((unsigned char *)server + sizeof(hostname));
-//    memcpy(server->hostname, hostname, sizeof(hostname));
-    server->port = port;
-    server->maxonline = maxonline;
-    server->timeout = timeout;
-}
+#define M_SUCCESS 1
+#define M_FAILURE 0
 
-void free_server()
-{
-    if (server) {
-        free(server);
-    }
-}
+#define PORT        1234
+#define MAX_ON_LINE     3
+#define MEM_SIZE    1024
+#define MAX_BUCCKETS 1024
 
 static int set_non_blocking(int fd) {
     int flags = fcntl(fd, F_GETFL);
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-        return 0;
+        return M_FAILURE;
     }
-    return 1;
+    return M_SUCCESS;
 }
 
-static ulong inline get_microsec() /* {{{ */ {
-    struct timeval tv;
-    if (gettimeofday(&tv, (struct timezone *)NULL) == 0) {
-        return (tv.tv_sec * 1000000) + tv.tv_usec;
-    } else {
-        return 0;
-    }
-}
-
-static void ev_on_accept(int fd, short ev, void *arg)
+static void release_sock_event(context_t* ctx)
 {
-    int client_fd;
-    struct sockaddr_in client_addr;
-    socklen_t client_len = sizeof(struct sockaddr_in);
-    
-    client_fd = accept(fd, (struct sockaddr *)&client_addr, &client_len);
-    if (client_fd == -1)
-        return ;
-    
-    context *ctx;
-    
-    ctx = calloc(1, sizeof(context) + sizeof(request_t));// + sizeof(response_t) + sizeof(struct event)*2);
-    assert(ctx);
-    
-    if (!set_non_blocking(fd)) {
-        fprintf(stderr, "Setting non-block mode failed %s", strerror(errno));
-        free(ctx);
-        close(client_fd);
-        return;
-    }
-    
-    ctx->request = (request_t *)((unsigned char *)ctx + sizeof(request_t));
-    ctx->response = (response_t *)((unsigned char *)ctx->request + sizeof(response_t));
-//    ctx->ev_read = (struct event *)((unsigned char *)ctx->response + sizeof(struct event));
-//    ctx->ev_write = (struct event *)((unsigned char *)ctx->ev_write + sizeof(struct event));
-
-    ctx->timeout.tv_sec = server->timeout;
-    ctx->timeout.tv_usec = 0;
-    
-    event_set(&ctx->ev_read, client_fd, EV_READ|EV_PERSIST, ev_on_read, ctx);
-    //event_base_set(base, &ctx->ev_read);
-    event_add(&ctx->ev_read, &ctx->timeout);
-}
-
-static void ev_on_read(int fd, short ev, void *arg)
-{
-    context *ctx = (context *)arg;
-    assert(ctx);
-    request_t *request = ctx->request;
-    
-    if (ev == EV_TIMEOUT) {
-        ev_close_connection(fd, ctx); 
-    } else {
-        char buf[12];
-        strcpy(buf, "1024");
-        int read_bytes;
-        
-        request->size = atoi(buf); 
-        request->body = malloc(request->size);
-        bzero(request->body, 0); 
-        do {
-            read_bytes = recv(fd, request->body, request->size, 0);
-        } while (read_bytes == -1 && errno == EINTR);
-        
-        if (read_bytes <= 0 || read_bytes > request->size) {
-            ev_close_connection(fd, ctx);
-            fprintf(stderr, "Recv error failed size is smaller %s", strerror(errno));
-            return; 
-        }
-        
-        response_t *response = ctx->response;
-        response->body = malloc(read_bytes);
-        response->size = read_bytes;
-        memcpy(response->body, request->body, request->size);
-       
-        event_set(&ctx->ev_write, fd, EV_WRITE|EV_PERSIST, ev_on_write, ctx);
-        event_add(&ctx->ev_write, &ctx->timeout);
-        event_del(&ctx->ev_read);
-        return;
-    }
-}
-
-static void ev_on_write(int fd, short ev, void *arg)
-{
-    context *ctx = (context *)arg;
-    assert(ctx);
-    response_t *response = ctx->response;
-    if (ev == EV_TIMEOUT) {
-        ev_close_connection(fd, ctx); 
-    } else {
-        int bytes_sent = 0;
-        int ctx_sent = 0;
-        do {
-             if ((bytes_sent = send(fd, response->body, response->size, 0)) > 0) {
-                 ctx_sent += bytes_sent;
-            }
-        } while (bytes_sent == -1 && errno == EINTR);
-        
-        if (ctx_sent < response->size) { 
-            return;
-        }
-    } 
-}
-
-static void ev_close_connection(int fd, context *ctx) /* {{{ */ {
-    close(fd);
-    event_del(&ctx->ev_read);
-    event_del(&ctx->ev_write);
+    event_del(ctx->read_ev);
     request_free(ctx->request);
     response_free(ctx->response);
     free(ctx);
 }
 
+static void ev_on_write(int sock, short event, void* arg)
+{
+    context_t *ctx = (context_t *)arg;
+    response_t *response = ctx->response;
+
+    printf("response-size = %d\n", response->size);
+    int bytes_sent;
+    do {
+        if ((bytes_sent = send(sock, response->body, response->size, 0)) > 0) {
+        
+        }
+    } while (bytes_sent == -1 && errno == EINTR);
+
+    free(response->body);
+    response->body = NULL;
+
+}
+
+static void ev_on_read(int sock, short event, void* arg)
+{
+    int size;
+    context_t *ctx = (context_t *)arg;
+    
+    if (event == EV_TIMEOUT) {
+        release_sock_event(ctx);
+        close(sock);
+        return;
+    }
+
+    //request_t *request = ctx->request;
+    //request->body = calloc(1, server->max_read_size);;
+    response_t *response = ctx->response;
+    response->body = calloc(1, server->max_read_size);
+    size = recv(sock, response->body, server->max_read_size, 0);
+    if (size == 0) {
+        release_sock_event(ctx);
+        close(sock);
+        return;
+    } 
+    
+    response->size = size; 
+
+    event_set(ctx->write_ev, sock, EV_WRITE, ev_on_write, ctx);
+    event_base_set(base, ctx->write_ev);
+    event_add(ctx->write_ev, &ctx->timeout);
+}
+
+static context_t *context_init()
+{
+    context_t *ctx = calloc(1, sizeof(context_t) + sizeof(request_t) + sizeof(response_t) + sizeof(struct event) * 2);    
+    if (!ctx) {
+        return NULL;
+    }
+
+    ctx->request = (request_t *)((unsigned char *)ctx + sizeof(context_t));
+    ctx->response = (response_t *)((unsigned char *)ctx->request + sizeof(request_t));
+    ctx->read_ev = (struct event *)((unsigned char *)ctx->response + sizeof(response_t));
+    ctx->write_ev = (struct event *)((unsigned char *)ctx->read_ev + sizeof(struct event));
+    ctx->timeout.tv_sec = server->timeout;
+    ctx->timeout.tv_usec = 0;
+    return ctx;
+}
+
+static void ev_on_accept(int sock, short ev, void *arg)
+{
+    context_t *ctx = context_init();
+    assert(ctx);
+
+    struct sockaddr_in client_addr;
+    int client_fd, sin_size;
+
+    sin_size = sizeof(struct sockaddr_in);
+
+    client_fd = accept(sock, (struct sockaddr *)&client_addr, &sin_size);
+
+    if (client_fd == -1) {
+        return;
+    }
+    
+    if (set_non_blocking(client_fd) == M_FAILURE) {
+        close(client_fd);
+        return;
+    }
+
+    event_set(ctx->read_ev, client_fd, EV_READ|EV_PERSIST, ev_on_read, ctx);
+    event_base_set(base, ctx->read_ev);
+    event_add(ctx->read_ev, &ctx->timeout);
+}
+
+void server_init()
+{
+    server = calloc(1, sizeof(*server));
+    assert(server);
+}
+
+int server_set_opt(server_opt_t opt, void * val)
+{
+    switch (opt) {
+        case SERVER_PORT:
+            server->port = *((int *)&val);
+            break;
+        case READ_TIMEOUT:
+            server->timeout = *((int *)&val);
+            break;
+        case MAX_READ_SIZE:
+            server->max_read_size = *((int *)&val);
+        default:
+            return 0;
+    }
+
+    return 1;
+}
+
 static int listening()
 {
-    struct sockaddr sa;
-    int sockfd = 0;
+    struct sockaddr_in my_addr;
+    int sock;
     
-    assert(server);
-    assert(server->port);
-    
-    struct sockaddr_in ia;
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    int yes;
-    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-    memset(&ia, 0, sizeof(ia));
-
-    ia.sin_family = AF_INET;
-    ia.sin_port   = htons(server->port);
-    ia.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(sockfd,  (struct sockaddr*)&ia, sizeof(struct sockaddr)) == -1) {
-        fprintf(stderr, "bind sock error, %s", strerror(errno));
-        return 0;
-    }
-    
-    if (listen(sockfd, server->maxonline)) {
-        fprintf(stderr, "listen max on line error, %s", strerror(errno));
-        return 0;
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        fprintf(stderr, "Failed to create a sock '%s'", strerror(errno));
+        return;
     }
 
-    if (!set_non_blocking(sockfd)) {
-        fprintf(stderr, "set sock error");
-        return 0;
+    int yes = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+    memset(&my_addr, 0, sizeof(my_addr));
+    my_addr.sin_family = AF_INET;
+    my_addr.sin_port = htons(server->port);
+    my_addr.sin_addr.s_addr = INADDR_ANY;
+    
+    if (bind(sock, (struct sockaddr*)&my_addr, sizeof(struct sockaddr)) == -1) {
+        fprintf(stderr, "Failed to bind socket '%s'", strerror(errno));
+        close(sock);
+        return M_FAILURE;
+    }
+    
+    if (listen(sock, MAX_ON_LINE)) {
+        fprintf(stderr, "Failed start listening '%s'", strerror(errno));
+        close(sock);
+        return M_FAILURE;
+    }
+    
+    if (set_non_blocking(sock) == M_FAILURE) {
+        close(sock);
+        return M_FAILURE;
     }
 
-    server->fd = sockfd;
-    return 1;
+    server->fd = sock;
+    return M_SUCCESS;
 }
 
 void running()
 {
-    if (!listening()) {
+    if (listening() == M_FAILURE) {
+        fprintf(stderr, "Listening port error '%s'", strerror(errno));
         return;
-    }
+    } 
 
-    struct event *ev_accept = (struct event*)malloc(sizeof(*ev_accept));
-    event_init();
-    //base = event_base_new();
-    event_set(ev_accept, server->fd, EV_READ|EV_PERSIST, ev_on_accept, NULL);
-    //event_base_set(base, ev_accept);
-    event_add(ev_accept, NULL);
-    event_dispatch();
-
-    //event_base_dispatch(base);
+    struct event listen_ev;
+    base = event_base_new();
+    event_set(&listen_ev, server->fd, EV_READ|EV_PERSIST, ev_on_accept, NULL);
+    event_base_set(base, &listen_ev);
+    event_add(&listen_ev, NULL);
+    event_base_dispatch(base);
 }
+
